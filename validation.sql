@@ -1,28 +1,38 @@
 CREATE OR REPLACE FUNCTION validation()
-  RETURNS text AS $$
-DECLARE counter INTEGER;
-DECLARE minsid INTEGER;
-DECLARE maxsid INTEGER;
-DECLARE rec RECORD;
-DECLARE stmt varchar;
+  RETURNS SETOF RECORD AS $$
+DECLARE
+        rec RECORD;
+        temp_row RECORD;
 BEGIN
-  SELECT MIN(sid) INTO minsid FROM staging.validation;
-  SELECT MAX(sid) INTO maxsid FROM staging.validation;
 
-  CREATE TEMPORARY TABLE temp_table (col1 TEXT, col2 INTEGER, col3 BOOLEAN) ON COMMIT DROP;
+  CREATE TEMPORARY TABLE temp_table (source_system_name TEXT, count_rec INTEGER, bool BOOLEAN) ON COMMIT DROP;
 
-  FOR counter IN minsid..maxsid LOOP
-    RAISE NOTICE 'Counter: %', counter;
-    SELECT sql INTO stmt FROM staging.validation WHERE sid = counter;
+  FOR temp_row IN SELECT * FROM staging.validation
+  LOOP
 
-    RAISE NOTICE 'sql: %', stmt;
+    RAISE NOTICE 'sql: %', temp_row.sql;
 
-    PERFORM 'INSERT INTO temp_table (col1, col2, col3) ' || stmt;
+    EXECUTE format('INSERT INTO temp_table %s', temp_row.sql);
 
-    IF temp_table.col3 = false THEN
+    IF (SELECT true FROM temp_table WHERE temp_table.bool = false LIMIT 1) THEN
       RAISE NOTICE 'there is a false value';
+
+      SELECT temp_table.source_system_name, temp_table.count_rec, temp_row.name, temp_row.sql
+      INTO rec
+      FROM temp_table;
+
+      RETURN NEXT rec;
+
+      TRUNCATE temp_table;
+
     END IF;
 
   END LOOP;
 END; $$
 LANGUAGE plpgsql;
+
+-- to run this function.
+SELECT * FROM validation() AS x(source_system_name TEXT,
+                                count_rec INT,
+                                test_name TEXT,
+                                original_sql TEXT);
